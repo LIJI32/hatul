@@ -12,18 +12,14 @@
 # 2003-02-06: Thanks to John Farrell for spotting a bug!
 #
 # 2014-03-31 Created a חתול! interpreter based on Grønnesby's Ook interpreter.
+#
+# 2014-05-23 Added support for חתול טעים! syntax in the interpreter.
 
 import sys, string, types
 import re
 
 def massage(text):
-    return re.sub('#.*?\n', '', text).split()
-
-def sane(code):
-    if len(code) % 2 == 0:
-        return 1
-    else:
-        return 0
+    return re.sub('[ \\t\\n\\r]+', ' ',re.sub('#.*?\n', '', text))
 
 class TulInterpreter:
 
@@ -34,44 +30,69 @@ class TulInterpreter:
     len    = 0
     codei  = 0
 
-    def __langinit(self):
-        self.lang   = {'חתול. חתול?' : self.mvptrup,
-                       'חתול? חתול.' : self.mvptrdn,
-                       'חתול. חתול.' : self.incptr,
-                       'חתול! חתול!' : self.decptr,
-                       'חתול. חתול!' : self.readc,
-                       'חתול! חתול.' : self.prntc,
-                       'חתול! חתול?' : self.startp,
-                       'חתול? חתול!' : self.endp}
+    def not_tasty(self):
+        self.lang   = {
+        'חתול. חתול? ' : self.mvptrup,
+                       'חתול? חתול. ' : self.mvptrdn,
+                       'חתול. חתול. ' : self.incptr,
+                       'חתול! חתול! ' : self.decptr,
+                       'חתול. חתול! ' : self.readc,
+                       'חתול! חתול. ' : self.prntc,
+                       'חתול! חתול? ' : self.startp,
+                       'חתול? חתול! ' : self.endp
+                       }
+    def tasty(self):
+       self.lang   = {
+       'חתול. ' : self.mvptrup,
+                      'טעים. ' : self.mvptrdn,
+                      'חתול! ' : self.incptr,
+                      'טעים! ' : self.decptr,
+                      'חתול טעים? ' : self.readc,
+                      'חתול טעים. ' : self.prntc,
+                      'חתול? ' : self.startp,
+                      'טעים? ' : self.endp
+                       }
 
     def mem(self):
         return self.memory[self.memptr]
 
     def __init__(self, file):
-        self.__langinit()
+        self.not_tasty()
         self.file = open(file)
         self.code = massage(self.file.read())
         self.file.close()
-        if not sane(self.code):
-            print self.code
-            raise "TulSyntaxError", "Code not sane."
-        else:
-            self.cmds()
+        self.cmds()
 
     def run(self):
         self.codei = 0
         self.len  = len(self.code)
         while self.codei < self.len:
-            self.lang[self.code[self.codei]]()
+            self.code[self.codei][1]()
             self.codei += 1
 
     def cmds(self):
-        i = 0
-        l = len(self.code)
+        code = self.code
         new = []
-        while i < l:
-            new.append(string.join((self.code[i], self.code[i+1]), " "))
-            i += 2
+        while code:
+            if code.startswith("חתול טעים! "):
+                self.tasty()
+                code = code[len("חתול טעים! "):]
+                continue
+                
+            if code.startswith("לא טעים! "):
+                self.not_tasty()
+                code = code[len("לא טעים! "):]
+                continue
+                
+            for phrase, func in self.lang.iteritems():
+                if code.startswith(phrase):
+                    new.append((phrase, func))
+                    code = code[len(phrase):]
+                    break
+            else:
+                print code
+                raise Exception("TulSyntaxError", 'Unexpected %s' % (' '.join(code.split(' ')[:2]),))
+                
         self.code = new
 
     def startp(self):
@@ -81,16 +102,16 @@ class TulInterpreter:
             return None
         while 1:
             i += 1
-            if self.code[i] == 'חתול! חתול?':
+            if self.code[self.codei][1] == self.startp:
                 tul += 1
-            if self.code[i] == 'חתול? חתול!':
+            if self.code[self.codei][1] == self.endp:
                 if tul == 0:
                     self.codei = i
                     break
                 else:
                     tul -= 1
             if i >= self.len:
-                raise 'TulSyntaxError', 'Unmatched "חתול! חתול?".'
+                raise Exception("TulSyntaxError", 'Unmatched "%s".' % (self.code[self.codei][0],))
 
     def endp(self):
         tul = 0
@@ -98,19 +119,19 @@ class TulInterpreter:
         if self.memory[self.memptr] == 0:
             return None
         if i == 0:
-            raise 'TulSyntaxError', 'Unmatched "חתול? חתול!".'
+            raise Exception("TulSyntaxError", 'Unmatched "%s".' % (self.code[self.codei][0],))
         while 1:
             i -= 1
-            if self.code[i] == 'חתול? חתול!':
+            if self.code[i][1] == self.endp:
                 tul += 1
-            if self.code[i] == 'חתול! חתול?':
+            if self.code[i][1] == self.startp:
                 if tul == 0:
                     self.codei = i
                     break
                 else:
                     tul -= 1
             if i <= 0:
-                raise 'TulSyntaxError', 'Unmatched "חתול? חתול!".'
+                raise Exception("TulSyntaxError", 'Unmatched "%s".' % (self.code[self.codei][0],))
 
     def incptr(self):
         self.memory[self.memptr] += 1
